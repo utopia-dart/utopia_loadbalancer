@@ -1,0 +1,15 @@
+name: utopia_loadbalancer
+description: Load balancer and multi-process scaling for Utopia HTTP framework
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: '>=2.18.0 <4.0.0'
+
+dependencies:
+  utopia_http:
+    path: ../../
+
+dev_dependencies:
+  test: ^1.21.0
+  lints: ^3.0.0

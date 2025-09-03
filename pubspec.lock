@@ -337,21 +337,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"
-  utopia_di:
-    dependency: transitive
-    description:
-      name: utopia_di
-      sha256: "3b6141a6efa3a3f8089fbbb4126a0b6373520948e220225d2b673f48f569a435"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.1"
-  utopia_http:
-    dependency: "direct main"
-    description:
-      path: "../.."
-      relative: true
-    source: path
-    version: "0.2.0"
   vm_service:
     dependency: transitive
     description:

@@ -1,34 +1,29 @@
 import 'dart:async';
 import 'dart:isolate';
 
-import 'package:utopia_http/src/request.dart';
-import 'package:utopia_http/src/response.dart';
-
 /// Handler for CPU-intensive work that can be offloaded to isolates
 typedef CpuIntensiveHandler<T> = T Function(dynamic data);
 
-/// Determines if a request should be handled by an isolate
-typedef IsolatePredicate = bool Function(Request request);
-
-/// Manages CPU-intensive work delegation to isolates
-class HybridRequestProcessor {
+/// Manages CPU-intensive work delegation to isolates for high-performance computing
+class HybridProcessor {
   final int _isolatePoolSize;
   final List<SendPort> _isolatePool = [];
   final List<bool> _isolateAvailable = [];
   int _nextIsolate = 0;
 
-  HybridRequestProcessor({int isolatePoolSize = 2})
+  HybridProcessor({int isolatePoolSize = 2})
       : _isolatePoolSize = isolatePoolSize;
 
   /// Initialize the isolate pool
   Future<void> initialize() async {
-    print('[Hybrid] Initializing $_isolatePoolSize isolates for CPU work');
+    print(
+        '[HybridProcessor] Initializing $_isolatePoolSize isolates for CPU work');
 
     for (int i = 0; i < _isolatePoolSize; i++) {
       await _createIsolate();
     }
 
-    print('[Hybrid] Isolate pool ready');
+    print('[HybridProcessor] Isolate pool ready');
   }
 
   /// Create a single compute isolate
@@ -41,9 +36,8 @@ class HybridRequestProcessor {
     _isolateAvailable.add(true);
   }
 
-  /// Process request with CPU-intensive work offloaded to isolates
-  Future<Response> processRequest<T>(
-    Request request,
+  /// Process CPU-intensive work using available isolates
+  Future<T> processWork<T>(
     CpuIntensiveHandler<T> handler,
     dynamic data,
   ) async {
@@ -51,8 +45,7 @@ class HybridRequestProcessor {
     final isolateIndex = _getAvailableIsolate();
     if (isolateIndex == -1) {
       // No isolates available, run on main thread
-      final result = handler(data);
-      return Response(result.toString());
+      return handler(data);
     }
 
     try {
@@ -73,7 +66,7 @@ class HybridRequestProcessor {
         throw Exception('Isolate error: ${result['error']}');
       }
 
-      return Response(result.toString());
+      return result as T;
     } finally {
       _isolateAvailable[isolateIndex] = true;
     }

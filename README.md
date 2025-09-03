@@ -1,123 +1,218 @@
 # Utopia Load Balancer
 
-Load balancer and multi-process scaling for Utopia HTTP framework.
-
-## Overview
-
-This package provides advanced scaling strategies that were moved out of the core `utopia_http` package to keep it simple and focused. If you need multi-process scaling or load balancing, use this package in addition to `utopia_http`.
+A high-performance, generic load balancer and multi-process scaling library for Dart applications. This package provides tools for distributing load across multiple processes, managing clusters, and offloading CPU-intensive work to isolates.
 
 ## Features
 
-- **Cluster Mode**: Multiple processes on different ports with load balancing
-- **Hybrid Mode**: Single process with CPU-intensive work offloaded to isolates
-- **Load Balancer**: Built-in HTTP proxy with multiple strategies
-- **Auto-restart**: Automatic process restart on failures
+- **Multi-Process Clustering**: Spawn multiple worker processes for better CPU utilization
+- **Load Balancing**: Built-in HTTP load balancer with multiple strategies
+- **Hybrid Processing**: Offload CPU-intensive tasks to isolate pools
+- **Zero Dependencies**: Pure Dart implementation with no external dependencies
+- **Framework Agnostic**: Works with any Dart HTTP server implementation
 
-## Usage
+## Load Balancing Strategies
 
-### Basic Cluster Setup
+- **Round Robin**: Distributes requests evenly across workers
+- **Least Connections**: Routes to the worker with fewest active connections  
+- **Random**: Randomly selects workers for each request
+
+## Quick Start
+
+### 1. Basic Cluster Setup
 
 ```dart
-import 'package:utopia_http/utopia_http.dart';
+import 'dart:io';
 import 'package:utopia_loadbalancer/utopia_loadbalancer.dart';
 
 void main() async {
-  final app = Http(
-    ShelfServer(InternetAddress.anyIPv4, 8080),
-  );
+  // Check if this is a worker process
+  final processId = ClusterManager.processId;
+  final workerPort = ClusterManager.workerPort;
 
-  // Define your routes
-  app.get('/').inject('response').action((Response response) {
-    response.text('Hello from worker process!');
-    return response;
-  });
+  if (processId != null && workerPort != null) {
+    // Worker process: start your HTTP server
+    await startWorker(workerPort);
+  } else {
+    // Main process: start cluster
+    await startCluster();
+  }
+}
 
-  // Use cluster manager for multi-process scaling
-  final clusterConfig = ClusterConfig(
-    processes: 4,
-    basePort: 8080,
-    enableLoadBalancer: true,
-    loadBalancerPort: 80,
+Future<void> startWorker(int port) async {
+  final server = await HttpServer.bind(InternetAddress.anyIPv4, port);
+  
+  await for (HttpRequest request in server) {
+    // Handle your requests here
+    request.response.write('Hello from worker $pid on port $port');
+    await request.response.close();
+  }
+}
+
+Future<void> startCluster() async {
+  final config = ClusterConfig(
+    processes: 4,                           // Number of worker processes
+    basePort: 8080,                         // Starting port for workers
+    enableLoadBalancer: true,               // Enable built-in load balancer
+    loadBalancerPort: 3000,                 // Load balancer port
     strategy: LoadBalancingStrategy.roundRobin,
   );
 
-  final clusterManager = ClusterManager(
-    clusterConfig,
-    Platform.executableArguments,
-  );
-
-  await clusterManager.start();
+  final cluster = ClusterManager(config, [Platform.script.toFilePath()]);
+  await cluster.start();
 }
 ```
 
-### Hybrid Processing
+### 2. Standalone Load Balancer
 
 ```dart
-import 'package:utopia_http/utopia_http.dart';
 import 'package:utopia_loadbalancer/utopia_loadbalancer.dart';
 
 void main() async {
-  final app = Http(
-    ShelfServer(InternetAddress.anyIPv4, 8080),
+  // Define your backend servers
+  final backends = [
+    ProcessInfo(id: 0, port: 8081),
+    ProcessInfo(id: 1, port: 8082), 
+    ProcessInfo(id: 2, port: 8083),
+  ];
+
+  final config = ClusterConfig(
+    processes: backends.length,
+    basePort: 8081,
+    loadBalancerPort: 3000,
+    strategy: LoadBalancingStrategy.leastConnections,
   );
 
-  final hybridProcessor = HybridRequestProcessor(isolatePoolSize: 4);
-  await hybridProcessor.initialize();
-
-  app.get('/cpu-intensive').inject('request').action((Request request) async {
-    // Offload CPU work to isolates
-    return await hybridProcessor.processRequest(
-      request,
-      (data) {
-        // CPU-intensive computation
-        var result = 0;
-        for (int i = 0; i < data['iterations']; i++) {
-          result += i;
-        }
-        return result;
-      },
-      {'iterations': 100000000},
-    );
-  });
-
-  await app.start();
+  final loadBalancer = LoadBalancer(config, backends);
+  await loadBalancer.start();
 }
 ```
 
-## Scaling Strategies
+### 3. Hybrid Processing (CPU-Intensive Tasks)
 
-### 1. Cluster Mode
-- **Use case**: High traffic applications
-- **Benefits**: True multi-core utilization, fault tolerance
-- **Trade-offs**: Higher memory usage, more complex deployment
+```dart
+import 'package:utopia_loadbalancer/utopia_loadbalancer.dart';
 
-### 2. Hybrid Mode  
-- **Use case**: Mixed workloads (I/O + CPU)
-- **Benefits**: Non-blocking I/O with CPU isolation
-- **Trade-offs**: Limited by Dart isolate communication overhead
+void main() async {
+  // Initialize isolate pool for CPU-intensive work
+  final processor = HybridProcessor(isolatePoolSize: 3);
+  await processor.initialize();
 
-### 3. Load Balancing Strategies
+  // Use processor for heavy computations
+  final result = await processor.processWork<int>(
+    (data) {
+      // CPU-intensive task runs in isolate
+      final n = data as int;
+      return fibonacci(n);
+    },
+    40, // Calculate fibonacci(40)
+  );
 
-- **Round Robin**: Evenly distributes requests
-- **Least Connections**: Routes to least busy worker
-- **Random**: Random distribution
+  print('Fibonacci result: $result');
+}
 
-## Architecture
+int fibonacci(int n) {
+  if (n <= 1) return n;
+  return fibonacci(n - 1) + fibonacci(n - 2);
+}
+```
 
-The package is organized as follows:
+## Configuration Options
 
-- `scaling_config.dart` - Configuration classes for scaling modes
-- `cluster_manager.dart` - Multi-process orchestration
-- `load_balancer.dart` - HTTP proxy and request distribution
-- `hybrid_processor.dart` - Isolate pool for CPU-intensive work
+### ClusterConfig
 
-## When to Use This Package
+```dart
+ClusterConfig({
+  int processes = 4,                    // Number of worker processes
+  required int basePort,                // Starting port for workers (port + index)
+  bool enableLoadBalancer = false,      // Enable built-in load balancer
+  int? loadBalancerPort,               // Load balancer port (if enabled)
+  LoadBalancingStrategy strategy = LoadBalancingStrategy.roundRobin,
+})
+```
 
-Use `utopia_loadbalancer` when:
+### Load Balancing Strategies
 
-- You need to handle high traffic (1000+ concurrent users)
-- You have CPU-intensive operations that would block the event loop
-- You need fault tolerance and auto-restart capabilities
-- You want to utilize multiple CPU cores effectively
+- `LoadBalancingStrategy.roundRobin` - Distributes requests in round-robin fashion
+- `LoadBalancingStrategy.leastConnections` - Routes to worker with fewest connections
+- `LoadBalancingStrategy.random` - Randomly selects workers
 
-For simple applications, the core `utopia_http` package with single-process async handling is sufficient and much simpler to deploy and debug.
+## Examples
+
+The `example/` directory contains two essential examples:
+
+- **`cluster_example.dart`** - Multi-process clustering with load balancing
+- **`hybrid_processor_example.dart`** - CPU-intensive processing with isolates
+
+### Running Examples
+
+```bash
+# Multi-process cluster with load balancing
+dart run example/cluster_example.dart
+
+# Hybrid processing server with isolates
+dart run example/hybrid_processor_example.dart
+
+# Standalone load balancer
+dart run example/simple_load_balancer.dart
+```
+
+## API Reference
+
+### ClusterManager
+
+Manages multiple worker processes and optional load balancer.
+
+```dart
+final cluster = ClusterManager(config, [Platform.script.toFilePath()]);
+await cluster.start();
+```
+
+**Static Methods:**
+- `ClusterManager.isClusterMode` - Check if running in cluster mode
+- `ClusterManager.isWorker` - Check if current process is a worker
+- `ClusterManager.workerPort` - Get worker port for current process
+- `ClusterManager.processId` - Get process ID for current process
+
+### LoadBalancer
+
+HTTP load balancer for distributing requests across multiple backends.
+
+```dart
+final loadBalancer = LoadBalancer(config, workers);
+await loadBalancer.start();
+```
+
+### HybridProcessor
+
+Manages isolate pools for CPU-intensive work.
+
+```dart
+final processor = HybridProcessor(isolatePoolSize: 3);
+await processor.initialize();
+
+final result = await processor.processWork<T>(handler, data);
+```
+
+## Performance Considerations
+
+1. **Process Count**: Generally set to the number of CPU cores available
+2. **Isolate Pool Size**: For CPU-intensive work, 2-4 isolates per core
+3. **Load Balancing Strategy**: 
+   - Use `roundRobin` for uniform requests
+   - Use `leastConnections` for variable request processing times
+   - Use `random` for simple distribution
+
+## Platform Support
+
+- ✅ Linux
+- ✅ macOS  
+- ✅ Windows
+- ✅ Docker containers
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.

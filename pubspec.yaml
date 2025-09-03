@@ -1,14 +1,10 @@
 name: utopia_loadbalancer
-description: Load balancer and multi-process scaling for Utopia HTTP framework
+description: A generic load balancer and multi-process scaling library for Dart applications
 version: 1.0.0
 publish_to: none
 
 environment:
   sdk: '>=2.18.0 <4.0.0'
-
-dependencies:
-  utopia_http:
-    path: ../../
 
 dev_dependencies:
   test: ^1.21.0

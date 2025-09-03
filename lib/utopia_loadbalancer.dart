@@ -1,4 +1,10 @@
-/// Load balancer and multi-process scaling for Utopia HTTP framework
+/// A generic load balancer and multi-process scaling library for Dart applications
+///
+/// This library provides tools for:
+/// - Load balancing across multiple processes
+/// - Multi-process cluster management
+/// - CPU-intensive work delegation to isolates
+/// - Different load balancing strategies (round-robin, least connections, random)
 library utopia_loadbalancer;
 
 export 'scaling_config.dart';
